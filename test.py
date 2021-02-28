@@ -49,8 +49,7 @@ def main(args):
                         char_vectors=char_vectors,
                         char_channel_size=args.char_channel_size,
                         char_channel_width=args.char_channel_width,
-                        hidden_size=args.hidden_size,
-                        drop_prob=args.drop_prob)
+                        hidden_size=args.hidden_size)
     else:
         model = BiDAF(word_vectors=word_vectors,
                     hidden_size=args.hidden_size)
