@@ -220,3 +220,58 @@ class BiDAFOutput(nn.Module):
         log_p2 = masked_softmax(logits_2.squeeze(), mask, log_softmax=True)
 
         return log_p1, log_p2
+
+
+class WordCharEmbedding(nn.Module):
+    """Embedding layer used by BiDAF, *with* the character-level component.
+
+    Word-level embeddings are further refined using a 2-layer Highway Encoder
+    (see `HighwayEncoder` class for details).
+
+    Args:
+        word_vectors (torch.Tensor): Pre-trained word vectors.
+        char_vectors (torch.Tensor): Pre-trained char vectors.
+        hidden_size (int): Size of hidden activations.
+        drop_prob (float): Probability of zero-ing out activations
+    """
+    def __init__(self, word_vectors, char_vectors, char_channel_size,
+                 char_channel_width, hidden_size, drop_prob):
+        super(WordCharEmbedding, self).__init__()
+        self.drop_prob = drop_prob
+        self.w_embed = nn.Embedding.from_pretrained(word_vectors)
+        self.c_embed = nn.Embedding.from_pretrained(char_vectors)
+        self.c_conv = nn.Sequential(
+            nn.Conv2d(1, char_channel_size,
+                      (char_channel_width, char_vectors.size(1))),
+            nn.ReLU()
+        )
+        self.proj = nn.Linear(word_vectors.size(1) + char_channel_size,
+                              hidden_size, bias=False)
+        self.hwy = HighwayEncoder(2, hidden_size)
+
+    def conv_c_emb(self, c_x):
+        # (batch_size, seq_len, word_len, c_embed_size)
+        c_emb = self.c_embed(c_x)
+        batch_size, seq_len, word_len, c_emb_size = c_emb.size()
+        # (batch_size*seq_len, 1, word_len, c_embed_size)
+        c_emb = c_emb.view(-1, word_len, c_emb_size).unsqueeze(1)
+        c_emb = F.dropout(c_emb, self.drop_prob, self.training)
+        # (batch_size*seq_len, char_channel_size, conv_len, 1) ->
+        # (batch_size*seq_len, char_channel_size, conv_len)
+        c_emb_convolved = self.c_conv(c_emb).squeeze(-1)
+        # (batch_size*seq_len, char_channel_size, conv_len) ->
+        # (batch_size*seq_len, char_channel_size) ->
+        # (batch_size, seq_len, char_channel_size)
+        # print(c_emb_convolved.shape)
+        c_emb_convolved_maxpooled = F.max_pool1d(c_emb_convolved, c_emb_convolved.size(-1)).squeeze(-1).view(batch_size, seq_len, -1)
+        return c_emb_convolved_maxpooled
+
+    def forward(self, w_x, c_x):
+        w_emb = self.w_embed(w_x)   # (batch_size, seq_len, embed_size)
+        w_emb = F.dropout(w_emb, self.drop_prob, self.training)
+        c_emb = self.conv_c_emb(c_x) # (batch_size, seq_len, char_channel_size)
+        emb = torch.cat((w_emb, c_emb), dim=-1)
+        emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
+        emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
+
+        return emb

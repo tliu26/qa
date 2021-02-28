@@ -38,12 +38,32 @@ class Encoding(nn.Module):
         c_emb = c_emb.view(batch_size * seq_len, w_len, -1)
         # h_n.shape = (2, batch_size * seq_len, hidden_size)
         _, h_n = self.c_rnn(c_emb)
+        h_n = F.dropout(h_n, self.drop_prob, self.training)
         h_n = h_n.view(2, batch_size, seq_len, -1)
         # Eq. (1) in [R-net]
         w_c_emb = torch.cat((w_emb, h_n[0], h_n[1]), dim=2)
         # u.shape = (batch_size, seq_len, 2 * hidden_size)
         u, _ = self.s_rnn(w_c_emb, s_lengths)
         return u
+        
+
+class GatedAttnRNN(nn.Module):
+    """
+    Inputs:
+        q_enc (tensor) of shape (batch_size, seq_len, 2 * hidden_size)
+        p_enc (tensor) of shape (batch_size, seq_len, 2 * hidden_size)
+    """
+    def __init__(self, hidden_size, drop_prob):
+        super(GatedAttnRNN, self).__init__()
+        self.linear_uQ = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.linear_uP = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.linear_vP = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.linear_vT = nn.Linear(hidden_size,           1, bias=False)
+        self.GRUcell = nn.GRUCell(hidden_size * 2, hidden_size, bias=True)
+        self.linear_g = nn.Linear(hidden_size * 2, hidden_size * 2, bias=False)
+        self.drop_prob = drop_prob
+    
+    # def forward(self, q_enc, p_enc):
         
 
 class BiRNN(nn.Module):
