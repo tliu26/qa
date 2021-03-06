@@ -257,3 +257,8 @@ def add_train_test_args(parser):
                         type=int,
                         default=5,
                         help='Width of kernel for CNN for char embeddings')
+
+    parser.add_argument('--use_r_net',
+                        type=lambda s: s.lower().startswith('t'),
+                        default=False,
+                        help='Whether to use R-net')

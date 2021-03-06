@@ -5,6 +5,7 @@ Author:
 """
 
 import layers
+import r_net_layers
 import torch
 import torch.nn as nn
 
@@ -71,6 +72,7 @@ class BiDAF(nn.Module):
 
         return out
 
+
 class BiDAFCh(nn.Module):
     """Baseline BiDAF model *with* character-level embedding for SQuAD.
 
@@ -136,4 +138,22 @@ class BiDAFCh(nn.Module):
 
         out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 
+        return out
+
+
+class RNet(nn.Module):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
+        super(RNet, self).__init__()
+        self.enc = r_net_layers.Encoding(word_vectors, char_vectors,
+                                         hidden_size, drop_prob)
+        self.gan = r_net_layers.GatedAttnRNN(hidden_size, drop_prob)
+        self.san = r_net_layers.SelfAttnRNN(hidden_size, drop_prob)
+        self.out = r_net_layers.OutputLayer(hidden_size, drop_prob)
+
+    def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
+        c_emb, c_len = self.enc(cw_idxs, cc_idxs)
+        q_emb, q_len = self.enc(qw_idxs, qc_idxs)
+        vp = self.gan(q_emb, c_emb, q_len, c_len)
+        hp = self.san(vp, c_len)
+        out = self.out(q_emb, hp, q_len, c_len)
         return out

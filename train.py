@@ -17,7 +17,7 @@ import util
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF, BiDAFCh
+from models import BiDAF, BiDAFCh, RNet
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
@@ -58,6 +58,12 @@ def main(args):
         model = BiDAF(word_vectors=word_vectors,
                       hidden_size=args.hidden_size,
                       drop_prob=args.drop_prob)
+    if args.use_r_net:
+        char_vectors = util.torch_from_json(args.char_emb_file)
+        model = RNet(word_vectors=word_vectors,
+                     char_vectors=char_vectors,
+                     hidden_size=args.hidden_size,
+                     drop_prob=args.drop_prob)
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
@@ -115,10 +121,13 @@ def main(args):
                 optimizer.zero_grad()
 
                 # Forward
-                if args.ch_embed:
+                if args.use_r_net:
                     log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
                 else:
-                    log_p1, log_p2 = model(cw_idxs, qw_idxs)
+                    if args.ch_embed:
+                        log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
+                    else:
+                        log_p1, log_p2 = model(cw_idxs, qw_idxs)
                 y1, y2 = y1.to(device), y2.to(device)
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
@@ -151,7 +160,8 @@ def main(args):
                                                   args.dev_eval_file,
                                                   args.max_ans_len,
                                                   args.use_squad_v2,
-                                                  args.ch_embed)
+                                                  args.ch_embed,
+                                                  args.use_r_net)
                     saver.save(step, model, results[args.metric_name], device)
                     ema.resume(model)
 
@@ -171,7 +181,7 @@ def main(args):
                                    num_visuals=args.num_visuals)
 
 
-def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2, ch_embed):
+def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2, ch_embed, use_r_net):
     nll_meter = util.AverageMeter()
 
     model.eval()
@@ -190,10 +200,13 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2, ch_em
             batch_size = cw_idxs.size(0)
 
             # Forward
-            if ch_embed:
+            if use_r_net:
                 log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
             else:
-                log_p1, log_p2 = model(cw_idxs, qw_idxs)
+                if ch_embed:
+                    log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
+                else:
+                    log_p1, log_p2 = model(cw_idxs, qw_idxs)
             y1, y2 = y1.to(device), y2.to(device)
             loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
             nll_meter.update(loss.item(), batch_size)
