@@ -13,6 +13,7 @@ import torch.optim as optim
 import torch.optim.lr_scheduler as sched
 import torch.utils.data as data
 import util
+import time
 
 from args import get_train_args
 from collections import OrderedDict
@@ -84,6 +85,9 @@ def main(args):
     # Get optimizer and scheduler
     optimizer = optim.Adadelta(model.parameters(), args.lr,
                                weight_decay=args.l2_wd)
+    if args.use_r_net:
+        optimizer = optim.Adadelta(model.parameters(), args.lr,
+                                   rho=0.95, weight_decay=args.l2_wd)
     scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
 
     # Get data loader
@@ -111,6 +115,7 @@ def main(args):
         with torch.enable_grad(), \
                 tqdm(total=len(train_loader.dataset)) as progress_bar:
             for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in train_loader:
+                t0 = time.time()
                 # Setup for forward
                 cw_idxs = cw_idxs.to(device)
                 qw_idxs = qw_idxs.to(device)
@@ -119,6 +124,7 @@ def main(args):
                 batch_size = cw_idxs.size(0)
                 optimizer.zero_grad()
 
+                t1 = time.time()
                 # Forward
                 if args.use_r_net:
                     log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
@@ -131,8 +137,10 @@ def main(args):
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
 
+                t2 = time.time()
                 # Backward
                 loss.backward()
+                t3 = time.time()
                 nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 optimizer.step()
                 scheduler.step(step // batch_size)
@@ -148,6 +156,7 @@ def main(args):
                                optimizer.param_groups[0]['lr'],
                                step)
 
+                t4 = time.time()
                 steps_till_eval -= batch_size
                 if steps_till_eval <= 0:
                     steps_till_eval = args.eval_steps
@@ -178,6 +187,12 @@ def main(args):
                                    step=step,
                                    split='dev',
                                    num_visuals=args.num_visuals)
+                t5 = time.time()
+                #print(f"t1 - t0: {t1 - t0}")
+                #print(f"t2 - t1: {t2 - t1}")
+                #print(f"t3 - t2: {t3 - t2}")
+                #print(f"t4 - t3: {t4 - t3}")
+                #print(f"t5 - t4: {t5 - t4}")
 
 
 def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2, ch_embed, use_r_net):

@@ -60,12 +60,19 @@ class Encoding(nn.Module):
         # (2, ..., hidden_size)
         _, h_n_nonzeros = self.c_rnn(c_emb_nonzeros, w_lengths)
         h_n = torch.zeros((2, batch_size, seq_len, h_n_nonzeros.size(-1)))
+        h_n = h_n.to(self.device)
         h_n[:, w_mask] = h_n_nonzeros
         # Eq. (1) in [R-net]
         w_c_emb = torch.cat((w_emb, h_n[0], h_n[1]), dim=2)
         # u.shape = (batch_size, seq_len, 2 * hidden_size)
         u, _ = self.s_rnn(w_c_emb, s_lengths)
         return u, s_lengths
+
+    @property
+    def device(self) -> torch.device:
+        """ Determine which device to place the Tensors upon, CPU or GPU.
+        """
+        return self.c_embed.weight.device
 
 
 class GatedAttnRNN(nn.Module):
@@ -122,6 +129,7 @@ class GatedAttnRNN(nn.Module):
         q_mask = [[1] * length.item() + [0] * (q_seq_len - length.item()) for
                   length in q_s_lengths]
         q_mask = torch.tensor(q_mask)[..., None]  # (batch_size, q_seq_len, 1)
+        q_mask = q_mask.to(self.device)
         at = masked_softmax(st, q_mask, dim=1)  # (batch_size, q_seq_len, 1)
         # at = F.softmax(st, dim=1)  # (batch_size, q_seq_len, 1)
         ct = (at * q_enc).sum(1)  # (batch_size, 2 * hidden_size)
@@ -141,7 +149,7 @@ class GatedAttnRNN(nn.Module):
             sort_pack_seq(bidir_p_enc, bidir_p_s_lengths)
         ppe_data = packed_bidir_p_enc.data
         ppe_batch_sizes = packed_bidir_p_enc.batch_sizes
-        vp = torch.zeros((2 * batch_size, seq_len, hidden_size))
+        vp = torch.zeros((2 * batch_size, seq_len, hidden_size)).to(self.device)
         # Need to duplicate q_enc and then sort according to how batch elements
         # in p_enc are sorted, in order to match the input to the attention.
         q_enc2_sorted = torch.cat((q_enc, q_enc), dim=0)[sort_idx]
@@ -176,6 +184,12 @@ class GatedAttnRNN(nn.Module):
         vp = torch.cat((vp[0], vp[1]), dim=-1)
         vp = F.dropout(vp, self.drop_prob, self.training)
         return vp
+
+    @property
+    def device(self) -> torch.device:
+        """ Determine which device to place the Tensors upon, CPU or GPU.
+        """
+        return self.linear_vT.weight.device
 
 
 class SelfAttnRNN(nn.Module):
@@ -222,7 +236,7 @@ class SelfAttnRNN(nn.Module):
         p_mask = [[1] * length.item() + [0] * (seq_len - length.item()) for
                   length in p_s_lengths]
         p_mask = torch.tensor(p_mask)[..., None]  # (batch_size, q_seq_len, 1)
-        at = masked_softmax(st, p_mask, dim=1)  # (batch_size, q_seq_len, 1)
+        at = masked_softmax(st, p_mask.to(self.device), dim=1)  # (batch_size, q_seq_len, 1)
         ct = (at * vp).sum(1)  # (batch_size, 2 * hidden_size)
         ct = F.dropout(ct, self.drop_prob, self.training)
         return ct
@@ -240,7 +254,7 @@ class SelfAttnRNN(nn.Module):
             sort_pack_seq(bidir_vp, bidir_p_s_lengths)
         pvp_data = packed_bidir_vp.data
         pvp_batch_sizes = packed_bidir_vp.batch_sizes
-        hp = torch.zeros((2 * batch_size, seq_len, hidden_size))
+        hp = torch.zeros((2 * batch_size, seq_len, hidden_size)).to(self.device)
         # Need to duplicate vp and then sort according to how batch_elements in
         # vp are sorted, in order to match the key and query in attention.
         vp2_sorted = torch.cat((vp, vp), dim=0)[sort_idx]
@@ -254,10 +268,11 @@ class SelfAttnRNN(nn.Module):
             # (cur_batch_size, hidden_size * 2)
             vp_t = pvp_data[s_idx:e_idx]
             # (cur_batch_size, hidden_size * 2)
-            ct = self.attn(vp2_sorted[:cur_batch_size], vp_t,
+            # print(vp2_sorted.device, vp_t.device, p_s_lengths2.device)
+            ct = self.attn(vp2_sorted[:cur_batch_size].to(self.device), vp_t.to(self.device),
                            p_s_lengths2[:cur_batch_size])
             # (cur_batch_size, hidden_size * 4)
-            vpc_t = torch.cat((vp_t, ct), dim=-1)
+            vpc_t = torch.cat((vp_t.to(self.device), ct), dim=-1)
             # An additional gate like Eq. (6) in [R-net]
             gt = torch.sigmoid(self.g(vpc_t))
             hp[:cur_batch_size, t] =\
@@ -270,6 +285,12 @@ class SelfAttnRNN(nn.Module):
         hp = torch.cat((hp[0], hp[1]), dim=-1)
         hp = F.dropout(hp, self.drop_prob, self.training)
         return hp
+
+    @property
+    def device(self) -> torch.device:
+        """ Determine which device to place the Tensors upon, CPU or GPU.
+        """
+        return self.linear_vT.weight.device
 
 
 def reverse_enc(enc, s_lengths):
@@ -358,7 +379,7 @@ class OutputLayer(nn.Module):
         seq_len = uQ.size(1)
         q_mask = [[1] * length.item() + [0] * (seq_len - length.item()) for
                   length in q_s_lengths]
-        q_mask = torch.tensor(q_mask)[..., None]  # (batch_size, q_seq_len, 1)
+        q_mask = torch.tensor(q_mask)[..., None].to(self.device)  # (batch_size, q_seq_len, 1)
         a = masked_softmax(s, q_mask, dim=1)
         rQ = (a * uQ).sum(1)  # (batch_size, 2 * hidden_size)
         rQ = F.dropout(rQ, self.drop_prob, self.training)
@@ -381,7 +402,7 @@ class OutputLayer(nn.Module):
         seq_len = hp.size(1)
         p_mask = [[1] * length.item() + [0] * (seq_len - length.item()) for
                   length in p_s_lengths]
-        p_mask = torch.tensor(p_mask)[..., None]  # (batch_size, p_seq_len, 1)
+        p_mask = torch.tensor(p_mask)[..., None].to(self.device)  # (batch_size, p_seq_len, 1)
         at = masked_softmax(st, p_mask, dim=1, log_softmax=True)
         return at
 
@@ -397,6 +418,11 @@ class OutputLayer(nn.Module):
         log_p2 = self.attn2(hp, ha, p_s_lengths).squeeze(-1)
         return log_p1, log_p2
 
+    @property
+    def device(self) -> torch.device:
+        """ Determine which device to place the Tensors upon, CPU or GPU.
+        """
+        return self.linear_hP.weight.device
 
 class BiRNN(nn.Module):
     """General purpose bi-directional gated recurrent unit (GRU) RNN.

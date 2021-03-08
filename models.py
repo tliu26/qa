@@ -8,6 +8,7 @@ import layers
 import r_net_layers
 import torch
 import torch.nn as nn
+import time
 
 
 class BiDAF(nn.Module):
@@ -151,9 +152,18 @@ class RNet(nn.Module):
         self.out = r_net_layers.OutputLayer(hidden_size, drop_prob)
 
     def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
+        t0 = time.time()
         c_emb, c_len = self.enc(cw_idxs, cc_idxs)
         q_emb, q_len = self.enc(qw_idxs, qc_idxs)
+        t1 = time.time()
         vp = self.gan(q_emb, c_emb, q_len, c_len)
+        t2 = time.time()
         hp = self.san(vp, c_len)
+        t3 = time.time()
         out = self.out(q_emb, hp, q_len, c_len)
+        t4 = time.time()
+        #print(f"Encoding: {t1 - t0} s")
+        #print(f"GAN: {t2 - t1} s")
+        #print(f"SAN: {t3 - t2} s")
+        #print(f"Out: {t4 - t3} s")
         return out
