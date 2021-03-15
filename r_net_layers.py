@@ -483,3 +483,63 @@ class BiRNN(nn.Module):
 References:
     [R-net]: https://www.microsoft.com/en-us/research/wp-content/uploads/2017/05/r-net.pdf
 """
+
+
+class Encoding1(nn.Module):
+    """Encoding layer used by R-net, with character-level embedding.
+
+    First look up word and character vectors. Then apply a bi-directional RNN
+    to the character embeddings (now word_len is the seq_len in the usual RNN),
+    use the last hidden state as the "character embedding" of the whole word.
+    Finally use the concatenation of word and "character embeddings" as the
+    representation of a word and apply an RNN to the sequence of words
+
+    Parameters:
+        word_vectors (torch.Tensor): Pre-trained word vectors.
+        char_vectors (torch.Tensor): Pre-trained char vectors.
+        hidden_size (int): Size of hidden activations.
+        drop_prob (float): Probability of zero-ing out activations.
+
+    Inputs:
+        w_idxs (tensor) of shape (batch_size, seq_len).
+        c_idxs (tensor) of shape (batch_size, seq_len, w_len).
+
+    Outputs:
+        u (tensor) of shape (batch_size, seq_len, 2 * hidden_size).
+        s_lengths (tensor) of shape (batch_size).
+    """
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+        super(Encoding1, self).__init__()
+        self.drop_prob = drop_prob
+        self.w_embed = nn.Embedding.from_pretrained(word_vectors)
+        self.c_embed = nn.Embedding.from_pretrained(char_vectors)
+        # RNN for refining character-level embedding within each word
+        self.c_rnn = BiRNN(char_vectors.size(1), hidden_size, 1, drop_prob)
+        self.c_rnn = nn.GRU(char_vectors.size(1), hidden_size,
+                            batch_first=True, bidirectional=True)
+        # RNN for refining word and char embeddings of each sequence
+        self.s_rnn = BiRNN(word_vectors.size(1) + 2*hidden_size, hidden_size,
+                           3, drop_prob)
+
+    def forward(self, w_idxs, c_idxs):
+        # Get information about sizes of the text
+        batch_size, seq_len, w_len = c_idxs.size()
+        w_mask = torch.zeros_like(w_idxs) != w_idxs  # (batch_size, seq_len)
+        s_lengths = w_mask.sum(-1)
+
+        # get embeddings
+        w_emb = self.w_embed(w_idxs)  # (batch_size, seq_len, w_emb_size)
+        c_emb = self.c_embed(c_idxs).view(batch_size * seq_len, w_len, -1)
+        _, h_n = self.c_rnn(c_emb)
+        h_n = h_n.view(2, batch_size, seq_len, -1)
+        # Eq. (1) in [R-net]
+        w_c_emb = torch.cat((w_emb, h_n[0], h_n[1]), dim=2)
+        # u.shape = (batch_size, seq_len, 2 * hidden_size)
+        u, _ = self.s_rnn(w_c_emb, s_lengths)
+        return u, s_lengths
+
+    @property
+    def device(self) -> torch.device:
+        """ Determine which device to place the Tensors upon, CPU or GPU.
+        """
+        return self.c_embed.weight.device

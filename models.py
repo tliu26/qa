@@ -6,6 +6,7 @@ Author:
 
 import layers
 import r_net_layers
+import rnl
 import torch
 import torch.nn as nn
 import time
@@ -147,6 +148,8 @@ class RNet(nn.Module):
         super(RNet, self).__init__()
         self.enc = r_net_layers.Encoding(word_vectors, char_vectors,
                                          hidden_size, drop_prob)
+        # self.enc = r_net_layers.Encoding1(word_vectors, char_vectors,
+        #                                  hidden_size, drop_prob)
         self.gan = r_net_layers.GatedAttnRNN(hidden_size, drop_prob)
         self.san = r_net_layers.SelfAttnRNN(hidden_size, drop_prob)
         self.out = r_net_layers.OutputLayer(hidden_size, drop_prob)
@@ -162,8 +165,37 @@ class RNet(nn.Module):
         t3 = time.time()
         out = self.out(q_emb, hp, q_len, c_len)
         t4 = time.time()
-        #print(f"Encoding: {t1 - t0} s")
-        #print(f"GAN: {t2 - t1} s")
-        #print(f"SAN: {t3 - t2} s")
-        #print(f"Out: {t4 - t3} s")
+        print(f"Encoding: {t1 - t0} s")
+        print(f"GAN: {t2 - t1} s")
+        print(f"SAN: {t3 - t2} s")
+        print(f"Out: {t4 - t3} s")
         return out
+
+
+class RNet1(nn.Module):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
+        super(RNet1, self).__init__()
+        self.enc = rnl.Encoding(word_vectors, char_vectors,
+                                hidden_size, drop_prob)
+        self.pqmatcher = rnl.PQMatcher(self.enc.out_size, hidden_size, drop_prob)
+        self.selfmatcher = rnl.SelfMatcher(self.pqmatcher.out_size, drop_prob)
+        self.pointer = rnl.Pointer(self.selfmatcher.out_size,
+                                   self.enc.out_size)
+
+    def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
+        t0 = time.time()
+        c_emb, c_len = self.enc(cw_idxs, cc_idxs)
+        q_emb, q_len = self.enc(qw_idxs, qc_idxs)
+        t1 = time.time()
+        v = self.pqmatcher(c_emb, q_emb)
+        t2 = time.time()
+        torch.cuda.empty_cache()
+        h = self.selfmatcher(v)
+        t3 = time.time()
+        p1, p2 = self.pointer(h, q_emb)
+        t4 = time.time()
+        print(f"Encoding: {t1 - t0} s")
+        print(f"GAN: {t2 - t1} s")
+        print(f"SAN: {t3 - t2} s")
+        print(f"Out: {t4 - t3} s")
+        return p1, p2

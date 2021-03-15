@@ -18,7 +18,7 @@ import time
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF, BiDAFCh, RNet
+from models import BiDAF, BiDAFCh, RNet, RNet1
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
@@ -65,6 +65,12 @@ def main(args):
                      char_vectors=char_vectors,
                      hidden_size=args.hidden_size,
                      drop_prob=args.drop_prob)
+    elif args.use_r_net1:
+        char_vectors = util.torch_from_json(args.char_emb_file)
+        model = RNet1(word_vectors=word_vectors,
+                     char_vectors=char_vectors,
+                     hidden_size=args.hidden_size,
+                     drop_prob=args.drop_prob)
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
@@ -85,7 +91,7 @@ def main(args):
     # Get optimizer and scheduler
     optimizer = optim.Adadelta(model.parameters(), args.lr,
                                weight_decay=args.l2_wd)
-    if args.use_r_net:
+    if args.use_r_net or args.use_r_net1:
         optimizer = optim.Adadelta(model.parameters(), args.lr,
                                    rho=0.95, weight_decay=args.l2_wd)
     scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
@@ -126,7 +132,7 @@ def main(args):
 
                 t1 = time.time()
                 # Forward
-                if args.use_r_net:
+                if args.use_r_net or args.use_r_net1:
                     log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
                 else:
                     if args.ch_embed:
@@ -169,7 +175,8 @@ def main(args):
                                                   args.max_ans_len,
                                                   args.use_squad_v2,
                                                   args.ch_embed,
-                                                  args.use_r_net)
+                                                  args.use_r_net,
+                                                  args.use_r_net1)
                     saver.save(step, model, results[args.metric_name], device)
                     ema.resume(model)
 
@@ -188,14 +195,14 @@ def main(args):
                                    split='dev',
                                    num_visuals=args.num_visuals)
                 t5 = time.time()
-                #print(f"t1 - t0: {t1 - t0}")
-                #print(f"t2 - t1: {t2 - t1}")
-                #print(f"t3 - t2: {t3 - t2}")
-                #print(f"t4 - t3: {t4 - t3}")
-                #print(f"t5 - t4: {t5 - t4}")
+                print(f"t1 - t0: {t1 - t0}")
+                print(f"t2 - t1: {t2 - t1}")
+                print(f"t3 - t2: {t3 - t2}")
+                print(f"t4 - t3: {t4 - t3}")
+                print(f"t5 - t4: {t5 - t4}")
 
 
-def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2, ch_embed, use_r_net):
+def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2, ch_embed, use_r_net, use_r_net1):
     nll_meter = util.AverageMeter()
 
     model.eval()
@@ -213,7 +220,7 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2, ch_em
             batch_size = cw_idxs.size(0)
 
             # Forward
-            if use_r_net:
+            if use_r_net or use_r_net1:
                 log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
             else:
                 if ch_embed:
