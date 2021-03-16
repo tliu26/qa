@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from util import masked_softmax
 
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
@@ -68,7 +69,7 @@ class Encoding(nn.Module):
         u, _ = self.s_rnn(w_c_emb, s_lengths)
         u = u.permute([1, 0, 2])
         del h_n
-        return u, s_lengths
+        return u, s_lengths, w_mask
 
     @property
     def device(self) -> torch.device:
@@ -188,7 +189,7 @@ class Pointer(nn.Module):
         self.Wha = nn.Linear(self.in_size2, self.hidden_size, bias=False)
         self.out_size = 1
 
-    def forward(self, h, u):
+    def forward(self, h, u, c_mask):
         (lp, batch_size, _) = h.size()
         (lq, _, _) = u.size()
         v = torch.randn(batch_size, self.hidden_size, 1).to(self.device)
@@ -202,13 +203,15 @@ class Pointer(nn.Module):
         x = torch.tanh(self.Wh(h)+self.Wha(r)).permute([1, 0, 2])
         s = torch.bmm(x, v)
         s = torch.squeeze(s)
-        p1 = F.log_softmax(s, 1)
+        # p1 = F.log_softmax(s, 1)
+        p1 = masked_softmax(s, c_mask, dim=1, log_softmax=True)
         c = torch.bmm(p1.unsqueeze(1), h_).squeeze()
         r = self.gru(c, r)
         x = torch.tanh(self.Wh(h) + self.Wha(r)).permute([1, 0, 2])
         s = torch.bmm(x, v)
         s = torch.squeeze(s)
         p2 = F.log_softmax(s, 1)
+        p2 = masked_softmax(s, c_mask, dim=1, log_softmax=True)
         return (p1, p2)
 
     @property

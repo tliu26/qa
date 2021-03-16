@@ -197,8 +197,8 @@ class RNet1(nn.Module):
 
     def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
         t0 = time.time()
-        c_emb, c_len = self.enc(cw_idxs, cc_idxs)
-        q_emb, q_len = self.enc(qw_idxs, qc_idxs)
+        c_emb, c_len, c_mask = self.enc(cw_idxs, cc_idxs)
+        q_emb, q_len, q_mask = self.enc(qw_idxs, qc_idxs)
         # c_emb = self.enc(cw_idxs, cc_idxs).permute([1, 0, 2])
         # q_emb = self.enc(qw_idxs, qc_idxs).permute([1, 0, 2])
         t1 = time.time()
@@ -207,7 +207,7 @@ class RNet1(nn.Module):
         torch.cuda.empty_cache()
         h = self.selfmatcher(v)
         t3 = time.time()
-        p1, p2 = self.pointer(h, q_emb)
+        p1, p2 = self.pointer(h, q_emb, c_mask)
         t4 = time.time()
         # print(f"Encoding: {t1 - t0} s")
         # print(f"pqmatcher: {t2 - t1} s")
