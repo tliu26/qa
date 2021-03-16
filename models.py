@@ -172,6 +172,35 @@ class RNet(nn.Module):
         return out
 
 
+class RNet2(nn.Module):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
+        super(RNet2, self).__init__()
+        self.enc = r_net_layers.Encoding2(word_vectors, char_vectors,
+                                          hidden_size, drop_prob)
+        self.gan = r_net_layers.GatedAttnRNN2(hidden_size, drop_prob)
+        self.san = r_net_layers.SelfAttnRNN2(hidden_size, drop_prob)
+        self.out = r_net_layers.OutputLayer2(hidden_size, drop_prob)
+
+    def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
+        t0 = time.time()
+        c_emb, c_len, c_mask = self.enc(cw_idxs, cc_idxs)
+        q_emb, q_len, q_mask = self.enc(qw_idxs, qc_idxs)
+        t1 = time.time()
+        vp = self.gan(q_emb, c_emb, q_mask, c_len)
+        torch.cuda.empty_cache()
+        t2 = time.time()
+        hp = self.san(vp, c_mask, c_len)
+        torch.cuda.empty_cache()
+        t3 = time.time()
+        out = self.out(q_emb, hp, q_mask, c_mask)
+        t4 = time.time()
+        print(f"Encoding: {t1 - t0} s")
+        print(f"GAN: {t2 - t1} s")
+        print(f"SAN: {t3 - t2} s")
+        print(f"Out: {t4 - t3} s")
+        return out
+
+
 class RNet1(nn.Module):
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
         super(RNet1, self).__init__()

@@ -267,3 +267,8 @@ def add_train_test_args(parser):
                         type=lambda s: s.lower().startswith('t'),
                         default=False,
                         help='Whether to use R-net1')
+
+    parser.add_argument('--use_r_net2',
+                        type=lambda s: s.lower().startswith('t'),
+                        default=False,
+                        help='Whether to use R-net1')
