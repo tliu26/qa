@@ -242,17 +242,17 @@ def add_train_test_args(parser):
                         type=str,
                         default=None,
                         help='Path to load as a model checkpoint.')
-    
+
     parser.add_argument('--ch_embed',
                         type=lambda s: s.lower().startswith('t'),
                         default=False,
                         help='Whether to use character-level embeddings for BiDAF')
-    
+
     parser.add_argument('--char_channel_size',
                         type=int,
                         default=100,
                         help='Output channel size for CNN for char embeddings')
-    
+
     parser.add_argument('--char_channel_width',
                         type=int,
                         default=5,

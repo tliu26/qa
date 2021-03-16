@@ -175,17 +175,32 @@ class RNet(nn.Module):
 class RNet1(nn.Module):
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0.):
         super(RNet1, self).__init__()
-        self.enc = rnl.Encoding(word_vectors, char_vectors,
-                                hidden_size, drop_prob)
-        self.pqmatcher = rnl.PQMatcher(self.enc.out_size, hidden_size, drop_prob)
+        char_channel_size = 100
+        char_channel_width = 5
+        # self.enc = rnl.Encoding(word_vectors, char_vectors,
+        #                         hidden_size, drop_prob)
+        # self.pqmatcher = rnl.PQMatcher(self.enc.out_size, hidden_size, drop_prob)
+        # self.selfmatcher = rnl.SelfMatcher(self.pqmatcher.out_size, drop_prob)
+        # self.pointer = rnl.Pointer(self.selfmatcher.out_size,
+        #                            self.enc.out_size)
+
+        self.enc = layers.WordCharEmbedding(word_vectors=word_vectors,
+                                            char_vectors=char_vectors,
+                                            char_channel_size=char_channel_size,
+                                            char_channel_width=char_channel_width,
+                                            hidden_size=hidden_size,
+                                            drop_prob=drop_prob)
+        self.pqmatcher = rnl.PQMatcher(hidden_size, hidden_size, drop_prob)
         self.selfmatcher = rnl.SelfMatcher(self.pqmatcher.out_size, drop_prob)
         self.pointer = rnl.Pointer(self.selfmatcher.out_size,
-                                   self.enc.out_size)
+                                   hidden_size)
 
     def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
         t0 = time.time()
-        c_emb, c_len = self.enc(cw_idxs, cc_idxs)
-        q_emb, q_len = self.enc(qw_idxs, qc_idxs)
+        # c_emb, c_len = self.enc(cw_idxs, cc_idxs)
+        # q_emb, q_len = self.enc(qw_idxs, qc_idxs)
+        c_emb = self.enc(cw_idxs, cc_idxs).permute([1, 0, 2])
+        q_emb = self.enc(qw_idxs, qc_idxs).permute([1, 0, 2])
         t1 = time.time()
         v = self.pqmatcher(c_emb, q_emb)
         t2 = time.time()
