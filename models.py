@@ -165,10 +165,10 @@ class RNet(nn.Module):
         t3 = time.time()
         out = self.out(q_emb, hp, q_len, c_len)
         t4 = time.time()
-        print(f"Encoding: {t1 - t0} s")
-        print(f"GAN: {t2 - t1} s")
-        print(f"SAN: {t3 - t2} s")
-        print(f"Out: {t4 - t3} s")
+        # print(f"Encoding: {t1 - t0} s")
+        # print(f"GAN: {t2 - t1} s")
+        # print(f"SAN: {t3 - t2} s")
+        # print(f"Out: {t4 - t3} s")
         return out
 
 
@@ -177,30 +177,30 @@ class RNet1(nn.Module):
         super(RNet1, self).__init__()
         char_channel_size = 100
         char_channel_width = 5
-        # self.enc = rnl.Encoding(word_vectors, char_vectors,
-        #                         hidden_size, drop_prob)
-        # self.pqmatcher = rnl.PQMatcher(self.enc.out_size, hidden_size, drop_prob)
-        # self.selfmatcher = rnl.SelfMatcher(self.pqmatcher.out_size, drop_prob)
-        # self.pointer = rnl.Pointer(self.selfmatcher.out_size,
-        #                            self.enc.out_size)
-
-        self.enc = layers.WordCharEmbedding(word_vectors=word_vectors,
-                                            char_vectors=char_vectors,
-                                            char_channel_size=char_channel_size,
-                                            char_channel_width=char_channel_width,
-                                            hidden_size=hidden_size,
-                                            drop_prob=drop_prob)
-        self.pqmatcher = rnl.PQMatcher(hidden_size, hidden_size, drop_prob)
+        self.enc = rnl.Encoding(word_vectors, char_vectors,
+                                hidden_size, drop_prob)
+        self.pqmatcher = rnl.PQMatcher(self.enc.out_size, hidden_size, drop_prob)
         self.selfmatcher = rnl.SelfMatcher(self.pqmatcher.out_size, drop_prob)
         self.pointer = rnl.Pointer(self.selfmatcher.out_size,
-                                   hidden_size)
+                                   self.enc.out_size)
+
+        # self.enc = layers.WordCharEmbedding(word_vectors=word_vectors,
+        #                                     char_vectors=char_vectors,
+        #                                     char_channel_size=char_channel_size,
+        #                                     char_channel_width=char_channel_width,
+        #                                     hidden_size=hidden_size,
+        #                                     drop_prob=drop_prob)
+        # self.pqmatcher = rnl.PQMatcher(hidden_size, hidden_size, drop_prob)
+        # self.selfmatcher = rnl.SelfMatcher(self.pqmatcher.out_size, drop_prob)
+        # self.pointer = rnl.Pointer(self.selfmatcher.out_size,
+        #                            hidden_size)
 
     def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
         t0 = time.time()
-        # c_emb, c_len = self.enc(cw_idxs, cc_idxs)
-        # q_emb, q_len = self.enc(qw_idxs, qc_idxs)
-        c_emb = self.enc(cw_idxs, cc_idxs).permute([1, 0, 2])
-        q_emb = self.enc(qw_idxs, qc_idxs).permute([1, 0, 2])
+        c_emb, c_len = self.enc(cw_idxs, cc_idxs)
+        q_emb, q_len = self.enc(qw_idxs, qc_idxs)
+        # c_emb = self.enc(cw_idxs, cc_idxs).permute([1, 0, 2])
+        # q_emb = self.enc(qw_idxs, qc_idxs).permute([1, 0, 2])
         t1 = time.time()
         v = self.pqmatcher(c_emb, q_emb)
         t2 = time.time()
@@ -209,8 +209,8 @@ class RNet1(nn.Module):
         t3 = time.time()
         p1, p2 = self.pointer(h, q_emb)
         t4 = time.time()
-        print(f"Encoding: {t1 - t0} s")
-        print(f"GAN: {t2 - t1} s")
-        print(f"SAN: {t3 - t2} s")
-        print(f"Out: {t4 - t3} s")
+        # print(f"Encoding: {t1 - t0} s")
+        # print(f"pqmatcher: {t2 - t1} s")
+        # print(f"selfmatcher: {t3 - t2} s")
+        # print(f"pointer: {t4 - t3} s")
         return p1, p2

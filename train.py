@@ -195,11 +195,11 @@ def main(args):
                                    split='dev',
                                    num_visuals=args.num_visuals)
                 t5 = time.time()
-                print(f"t1 - t0: {t1 - t0}")
-                print(f"t2 - t1: {t2 - t1}")
-                print(f"t3 - t2: {t3 - t2}")
-                print(f"t4 - t3: {t4 - t3}")
-                print(f"t5 - t4: {t5 - t4}")
+                # print(f"t1 - t0: {t1 - t0}")
+                # print(f"t2 - t1: {t2 - t1}")
+                # print(f"t3 - t2: {t3 - t2}")
+                # print(f"t4 - t3: {t4 - t3}")
+                # print(f"t5 - t4: {t5 - t4}")
 
 
 def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2, ch_embed, use_r_net, use_r_net1):

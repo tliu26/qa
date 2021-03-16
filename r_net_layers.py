@@ -271,11 +271,10 @@ class SelfAttnRNN(nn.Module):
             # (cur_batch_size, hidden_size * 2)
             vp_t = pvp_data[s_idx:e_idx]
             # (cur_batch_size, hidden_size * 2)
-            # print(vp2_sorted.device, vp_t.device, p_s_lengths2.device)
-            ct = self.attn(vp2_sorted[:cur_batch_size].to(self.device),
-                           vp_t.to(self.device), p_s_lengths2[:cur_batch_size])
+            ct = self.attn(vp2_sorted[:cur_batch_size],
+                           vp_t, p_s_lengths2[:cur_batch_size])
             # (cur_batch_size, hidden_size * 4)
-            vpc_t = torch.cat((vp_t.to(self.device), ct), dim=-1)
+            vpc_t = torch.cat((vp_t, ct), dim=-1)
             # An additional gate like Eq. (6) in [R-net]
             gt = torch.sigmoid(self.g(vpc_t))
             hp[:cur_batch_size, t] =\
@@ -452,6 +451,7 @@ class BiRNN(nn.Module):
                           dropout=drop_prob if num_layers > 1 else 0.)
 
     def forward(self, x, lengths):
+        self.rnn.flatten_parameters()
         # Save original padded length for use by pad_packed_sequence
         orig_len = x.size(1)
 
