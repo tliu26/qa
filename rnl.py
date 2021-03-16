@@ -243,6 +243,7 @@ class BiRNN(nn.Module):
                           dropout=drop_prob if num_layers > 1 else 0.)
 
     def forward(self, x, lengths):
+        self.rnn.flatten_parameters()
         # Save original padded length for use by pad_packed_sequence
         orig_len = x.size(1)
 
