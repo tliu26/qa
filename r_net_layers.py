@@ -311,7 +311,7 @@ def reverse_enc(enc, s_lengths):
     rev_enc = []
     for enc_b, s_len in zip(enc, s_lengths):
         rev_idx = list(reversed(range(s_len))) + list(range(s_len, seq_len))
-        rev_enc.append(enc_b[rev_idx][None])
+        rev_enc.append(enc_b[rev_idx].unsqueeze(0))
     rev_enc = torch.cat(rev_enc, 0)
     return rev_enc
 
@@ -646,11 +646,12 @@ class GatedAttnRNN2(nn.Module):
 
     def forward(self, q_enc, p_enc, q_mask, p_s_lengths):
         rev_p_enc = reverse_enc(p_enc, p_s_lengths)
-        vp_f = self.gru_forward(q_enc, p_enc, q_mask, p_s_lengths)
-        vp_r = self.gru_forward(q_enc, rev_p_enc, q_mask, p_s_lengths)
-        vp = torch.cat((vp_f, vp_r), dim=-1)
+        vp_f = self.gru_forward(q_enc, p_enc, q_mask, p_s_lengths, True)
+        vp_r = self.gru_forward(q_enc, rev_p_enc, q_mask, p_s_lengths, False)
+        rev_vp_r = reverse_enc(vp_r, p_s_lengths)
+        vp = torch.cat((vp_f, rev_vp_r), dim=-1)
         vp = F.dropout(vp, self.drop_prob, self.training)
-        del vp_f, vp_r
+        del vp_f, vp_r, rev_vp_r
         return vp
 
     @property
@@ -679,7 +680,8 @@ class SelfAttnRNN2(nn.Module):
         self.linear_vP = nn.Linear(hidden_size * 2, hidden_size, bias=False)
         self.linear_vPt = nn.Linear(hidden_size * 2, hidden_size, bias=False)
         self.linear_vT = nn.Linear(hidden_size,               1, bias=False)
-        self.GRUcell = nn.GRUCell(hidden_size * 4, hidden_size, bias=True)
+        self.GRUcellF = nn.GRUCell(hidden_size * 4, hidden_size, bias=True)
+        self.GRUcellB = nn.GRUCell(hidden_size * 4, hidden_size, bias=True)
         self.g = nn.Linear(hidden_size * 4, hidden_size * 4, bias=False)
         self.drop_prob = drop_prob
 
@@ -707,7 +709,7 @@ class SelfAttnRNN2(nn.Module):
         del st, at, vp, vp_t, p_mask
         return ct
 
-    def gru_forward(self, vp, p_mask, p_s_lengths):
+    def gru_forward(self, vp, p_mask, p_s_lengths, forward=True):
         batch_size, seq_len, hidden_sizex2 = vp.size()
         hidden_size = hidden_sizex2 // 2
         packed_vp, sorted_p_s_lengths, sort_idx =\
@@ -727,10 +729,19 @@ class SelfAttnRNN2(nn.Module):
             vpc_t = torch.cat((vp_t, ct), dim=-1)
             gt = torch.sigmoid(self.g(vpc_t))
             if t == 0:
-                hp[:cur_batch_size, t] = self.GRUcell(gt * vpc_t)
+                if forward:
+                    hp[:cur_batch_size, t] = self.GRUcellF(gt * vpc_t)
+                else:
+                    hp[:cur_batch_size, t] = self.GRUcellB(gt * vpc_t)
             else:
-                hp[:cur_batch_size, t] =\
-                    self.GRUcell(gt * vpc_t, hp[:cur_batch_size, t-1].clone())
+                if forward:
+                    hp[:cur_batch_size, t] =\
+                        self.GRUcellF(gt * vpc_t,
+                                      hp[:cur_batch_size, t-1].clone())
+                else:
+                    hp[:cur_batch_size, t] =\
+                        self.GRUcellB(gt * vpc_t,
+                                      hp[:cur_batch_size, t-1].clone())
             s_idx = e_idx
         _, unsort_idx = sort_idx.sort(0)
         hp = hp[unsort_idx]
@@ -739,11 +750,12 @@ class SelfAttnRNN2(nn.Module):
 
     def forward(self, vp, p_mask, p_s_lengths):
         rev_vp = reverse_enc(vp, p_s_lengths)
-        hp_f = self.gru_forward(vp, p_mask, p_s_lengths)
-        hp_r = self.gru_forward(rev_vp, p_mask, p_s_lengths)
-        hp = torch.cat((hp_f, hp_r), dim=-1)
+        hp_f = self.gru_forward(vp, p_mask, p_s_lengths, True)
+        hp_r = self.gru_forward(rev_vp, p_mask, p_s_lengths, False)
+        rev_hp_r = reverse_enc(hp_r, p_s_lengths)
+        hp = torch.cat((hp_f, rev_hp_r), dim=-1)
         hp = F.dropout(hp, self.drop_prob, self.training)
-        del rev_vp, hp_f, hp_r
+        del rev_vp, hp_f, hp_r, rev_hp_r
         return hp
 
     @property

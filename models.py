@@ -194,10 +194,10 @@ class RNet2(nn.Module):
         t3 = time.time()
         out = self.out(q_emb, hp, q_mask, c_mask)
         t4 = time.time()
-        print(f"Encoding: {t1 - t0} s")
-        print(f"GAN: {t2 - t1} s")
-        print(f"SAN: {t3 - t2} s")
-        print(f"Out: {t4 - t3} s")
+        # print(f"Encoding: {t1 - t0} s")
+        # print(f"GAN: {t2 - t1} s")
+        # print(f"SAN: {t3 - t2} s")
+        # print(f"Out: {t4 - t3} s")
         return out
 
 
