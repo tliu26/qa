@@ -108,9 +108,12 @@ class PQMatcher(nn.Module):
             Wup = self.Wp(Up[i])
             Wuq = self.Wq(Uq)
             Wvv = self.Wv(v)
+            # (batch, seq_len, hidden)
             x = torch.tanh(Wup + Wuq + Wvv).permute([1, 0, 2])
+            # (batch, seq_len, 1) -> (batch, seq_len)
             s = torch.bmm(x, V)
             s = torch.squeeze(s, 2)
+            # (batch, 1, seq_len) @ (batch, seq_len, hidden_size)
             a = F.softmax(s, 1).unsqueeze(1)
             c = torch.bmm(a, Uq_).squeeze()
             r = torch.cat([Up[i], c], dim=1)
@@ -272,3 +275,97 @@ class BiRNN(nn.Module):
         h_n = F.dropout(h_n, self.drop_prob, self.training)
 
         return output, h_n
+
+
+# Using passage and question to obtain question-aware passage representation
+# Co-attention
+class PQMatcher1(nn.Module):
+    def __init__(self, in_size, hidden_size, dropout):
+        super(PQMatcher1, self).__init__()
+        self.hidden_size = hidden_size * 2
+        self.in_size = in_size
+        self.krnl = nn.Linear(self.in_size * 2, self.in_size * 2, bias=False)
+        self.gru = nn.GRUCell(input_size=in_size*2, hidden_size=self.hidden_size)
+        self.Wg = nn.Linear(self.in_size*4, self.in_size*4, bias=False)
+        self.out_size = self.hidden_size
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, up, uq):
+        (lp, batch_size, _) = up.size()
+        (lq, batch_size, _) = uq.size()
+        mixerp, mixerq = torch.arange(lp).long().to(self.device), torch.arange(lq).long().to(self.device)
+        Up = torch.cat([up, up[mixerp]], dim=2)
+        Uq = torch.cat([uq, uq[mixerq]], dim=2)
+        vs = torch.zeros(lp, batch_size, self.out_size).to(self.device)
+        v = torch.randn(batch_size, self.hidden_size).to(self.device)
+
+        Uq_ = Uq.permute([1, 0, 2])
+        for i in range(lp):
+            # (batch, seq_len, hidden_size) @ (batch, hidden_size, 1) ->
+            # (batch, seq_len, 1) -> (batch, seq_len)
+
+            # s = torch.bmm(Uq_, Up[i].unsqueeze(-1)).squeeze(-1)  # dot product
+            # s = torch.bmm(Uq_, self.krnl(Up[i]).unsqueeze(-1)).squeeze(-1)  # linear kernel
+            s = -(torch.norm(Uq_ - Up[i].unsqueeze(1), dim=-1) ** 2)  # L2-norm
+            a = F.softmax(s, 1).unsqueeze(1)
+
+            # (batch, 1, seq_len) @ (batch, seq_len, hidden_size)
+            # a is the attention weights
+            c = torch.bmm(a, Uq_).squeeze()
+            r = torch.cat([Up[i], c], dim=1)
+            g = torch.sigmoid(self.Wg(r))
+            r_ = torch.mul(g, r)
+            c_ = r_[:, self.in_size*2:]
+            v = self.gru(c_, v)
+            vs[i] = v
+            del a, s, c, g, r, r_, c_
+        del up, uq, Up, Uq, Uq_
+        vs = self.dropout(vs)
+        return vs
+
+    @property
+    def device(self) -> torch.device:
+        """ Determine which device to place the Tensors upon, CPU or GPU.
+        """
+        return self.Wg.weight.device
+
+
+# Input is question-aware passage representation
+# Output is self-attention question-aware passage representation
+class SelfMatcher1(nn.Module):
+    def __init__(self, in_size, dropout):
+        super(SelfMatcher1, self).__init__()
+        self.hidden_size = in_size
+        self.in_size = in_size
+        self.krnl = nn.Linear(self.in_size, self.in_size, bias=False)
+        self.gru = nn.GRUCell(input_size=in_size, hidden_size=self.hidden_size)
+        self.out_size = self.hidden_size
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, v):
+        (l, batch_size, _) = v.size()
+        h = torch.randn(batch_size, self.hidden_size).to(self.device)
+        hs = torch.zeros(l, batch_size, self.out_size).to(self.device)
+
+        for i in range(l):
+            # (batch, seq_len, hidden_size) @ (batch, hidden_size, 1) ->
+            # (batch, seq_len, 1) -> (batch, seq_len)
+
+            # s = torch.bmm(v.permute([1, 0, 2]), v[i].unsqueeze(-1)).squeeze(-1)  # dot product
+            # s = torch.bmm(v.permute([1, 0, 2]), self.krnl(v[i]).unsqueeze(-1)).squeeze(-1)  # linear kernel
+            s = -(torch.norm(v.permute([1, 0, 2]) - v[i].unsqueeze(1), dim=-1) ** 2)  # L2-norm
+            a = F.softmax(s, 1).unsqueeze(1)
+            c = torch.bmm(a, v.permute([1, 0, 2])).squeeze()
+            h = self.gru(c, h)
+            hs[i] = h
+            # logger.gpu_mem_log("SelfMatcher {:002d}".format(i), ['x', 'Wpv', 'Wpv_', 's', 'c', 'hs'], [x.data, Wpv.data, Wpv_.data, s.data, c.data, hs.data])
+            del s, a, c
+        hs = self.dropout(hs)
+        del h, v
+        return hs
+
+    @property
+    def device(self) -> torch.device:
+        """ Determine which device to place the Tensors upon, CPU or GPU.
+        """
+        return self.gru.weight_ih.device

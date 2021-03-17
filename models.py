@@ -208,8 +208,8 @@ class RNet1(nn.Module):
         char_channel_width = 5
         self.enc = rnl.Encoding(word_vectors, char_vectors,
                                 hidden_size, drop_prob)
-        self.pqmatcher = rnl.PQMatcher(self.enc.out_size, hidden_size, drop_prob)
-        self.selfmatcher = rnl.SelfMatcher(self.pqmatcher.out_size, drop_prob)
+        self.pqmatcher = rnl.PQMatcher1(self.enc.out_size, hidden_size, drop_prob)
+        self.selfmatcher = rnl.SelfMatcher1(self.pqmatcher.out_size, drop_prob)
         self.pointer = rnl.Pointer(self.selfmatcher.out_size,
                                    self.enc.out_size)
 
