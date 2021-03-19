@@ -54,6 +54,7 @@ def main(args):
         model = BiDAF(word_vectors=word_vectors,
                     hidden_size=args.hidden_size)
     if args.use_r_net:
+        char_vectors = util.torch_from_json(args.char_emb_file)
         model = RNet(word_vectors=word_vectors,
                      char_vectors=char_vectors,
                      hidden_size=args.hidden_size)

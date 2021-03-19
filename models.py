@@ -98,7 +98,7 @@ class BiDAFCh(nn.Module):
     def __init__(self, word_vectors, char_vectors, char_channel_size,
                  char_channel_width, hidden_size, drop_prob=0.):
         super(BiDAFCh, self).__init__()
-        
+
         self.emb = layers.WordCharEmbedding(word_vectors=word_vectors,
                                             char_vectors=char_vectors,
                                             char_channel_size=char_channel_size,
@@ -219,10 +219,10 @@ class RNet1(nn.Module):
         #                                     char_channel_width=char_channel_width,
         #                                     hidden_size=hidden_size,
         #                                     drop_prob=drop_prob)
-        # self.pqmatcher = rnl.PQMatcher(hidden_size, hidden_size, drop_prob)
+        # self.pqmatcher = rnl.PQMatcher(self.enc.out_size, hidden_size, drop_prob)
         # self.selfmatcher = rnl.SelfMatcher(self.pqmatcher.out_size, drop_prob)
         # self.pointer = rnl.Pointer(self.selfmatcher.out_size,
-        #                            hidden_size)
+        #                            self.enc.out_size)
 
     def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
         t0 = time.time()
