@@ -166,6 +166,21 @@ def get_test_args():
                         default='submission.csv',
                         help='Name for submission file.')
 
+    parser.add_argument('--load_path_r',
+                        type=str,
+                        default=None,
+                        help='Path to load as a rnet checkpoint.')
+
+    parser.add_argument('--load_path_b',
+                        type=str,
+                        default=None,
+                        help='Path to load as a bidaf checkpoint.')
+
+    parser.add_argument('--weight_r',
+                        type=float,
+                        default=0.5,
+                        help='Weight of rnet in ensemble')
+
     # Require load_path for test.py
     args = parser.parse_args()
     if not args.load_path:
